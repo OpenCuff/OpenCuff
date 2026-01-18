@@ -3,10 +3,24 @@ name = "opencuff"
 version = "0.1.0"
 description = "Controlled and secure operations for coding agents"
 readme = "README.md"
+license = "Apache-2.0"
 authors = [
     { name = "Kfir Gollan" }
 ]
 requires-python = ">=3.11"
+keywords = ["mcp", "ai", "agents", "security", "claude", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "fastmcp>=2.14.3",
     "pydantic>=2.0",
@@ -14,6 +28,12 @@ dependencies = [
     "watchfiles>=0.21",
     "structlog>=24.0",
 ]
+
+[project.urls]
+Homepage = "https://opencuff.ai"
+Repository = "https://github.com/OpenCuff/OpenCuff"
+Documentation = "https://opencuff.ai"
+Issues = "https://github.com/OpenCuff/OpenCuff/issues"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
