@@ -1,12 +1,13 @@
 # OpenCuff Plugin System - High-Level Design
 
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2026-01-18
 **Status:** Draft
 
 **Revision History:**
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2026-01-18 | Added plugin discovery interface for CLI integration, CLICommand interface for plugin-exposed commands |
 | 1.1 | 2026-01-18 | Added request barrier for live reload, tool namespacing, HTTP re-initialization, health check scheduling, stderr handling, fixed naming consistency |
 | 1.0 | 2026-01-18 | Initial draft |
 
@@ -18,12 +19,13 @@
 4. [Plugin Types](#plugin-types)
 5. [Configuration Schema](#configuration-schema)
 6. [Plugin Interface Definitions](#plugin-interface-definitions)
-7. [Plugin Lifecycle](#plugin-lifecycle)
-8. [Live Reload Mechanism](#live-reload-mechanism)
-9. [Example Plugin Implementations](#example-plugin-implementations)
-10. [Security Considerations](#security-considerations)
-11. [Error Handling](#error-handling)
-12. [Future Considerations](#future-considerations)
+7. [Plugin Discovery Interface](#plugin-discovery-interface)
+8. [Plugin Lifecycle](#plugin-lifecycle)
+9. [Live Reload Mechanism](#live-reload-mechanism)
+10. [Example Plugin Implementations](#example-plugin-implementations)
+11. [Security Considerations](#security-considerations)
+12. [Error Handling](#error-handling)
+13. [Future Considerations](#future-considerations)
 
 ---
 
@@ -510,6 +512,472 @@ class InSourcePlugin:
         self.config = new_config
         await self.initialize()
 ```
+
+---
+
+## Plugin Discovery Interface
+
+The discovery interface enables plugins to be automatically detected and configured based on project files. This is used by the `cuff init` CLI command to generate configuration.
+
+### Discovery Protocol
+
+Plugins that support discovery implement a class method that examines a directory and returns discovery results:
+
+```python
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class DiscoveryResult:
+    """Result of plugin discovery for a directory."""
+
+    applicable: bool
+    """Whether this plugin is applicable to the directory."""
+
+    confidence: float
+    """Confidence score between 0.0 and 1.0.
+
+    Use this to indicate certainty of applicability:
+    - 1.0: Definitive match (e.g., Makefile exists for makefile plugin)
+    - 0.8: Strong match (e.g., file exists but may not be the intended use)
+    - 0.5: Possible match (e.g., partial indicators found)
+    - 0.0: No match
+
+    Note: This field is primarily for display purposes and conflict resolution.
+    The current generate_settings() includes all applicable plugins regardless
+    of confidence. Future versions may use confidence for prioritization.
+    """
+
+    suggested_config: dict[str, Any]
+    """Suggested plugin configuration based on discovery.
+
+    This should be a complete, working configuration that can be used
+    directly in settings.yml. Use sensible defaults.
+    """
+
+    description: str
+    """Human-readable description of what was discovered.
+
+    Examples:
+    - "Found Makefile with 12 targets"
+    - "Found package.json with 5 scripts (npm)"
+    - "No Makefile found"
+    """
+
+    warnings: list[str] = field(default_factory=list)
+    """Warnings about the discovery.
+
+    Examples:
+    - "pnpm-lock.yaml found but package_manager set to npm"
+    - "Makefile includes external files that could not be parsed"
+    """
+
+    discovered_items: list[str] = field(default_factory=list)
+    """List of discovered items (targets, scripts, etc.) for display."""
+
+
+class InSourcePlugin:
+    """Base class for in-source plugins."""
+
+    @classmethod
+    def discover(cls, directory: Path) -> DiscoveryResult:
+        """Discover if this plugin is applicable to the given directory.
+
+        This is a CLASS METHOD that runs WITHOUT instantiating the plugin.
+        It should:
+        1. Check for the presence of relevant files
+        2. Parse files minimally to extract useful information
+        3. Return a suggested configuration
+
+        The discovery should be:
+        - Fast: Avoid expensive operations
+        - Safe: Never execute code or modify files
+        - Informative: Provide useful descriptions and warnings
+
+        Args:
+            directory: The directory to scan for applicable files.
+
+        Returns:
+            DiscoveryResult indicating applicability and suggested config.
+
+        Example:
+            @classmethod
+            def discover(cls, directory: Path) -> DiscoveryResult:
+                makefile = directory / "Makefile"
+                if not makefile.exists():
+                    return DiscoveryResult(
+                        applicable=False,
+                        confidence=0.0,
+                        suggested_config={},
+                        description="No Makefile found",
+                    )
+
+                targets = cls._extract_targets_static(makefile)
+                return DiscoveryResult(
+                    applicable=True,
+                    confidence=1.0,
+                    suggested_config={
+                        "makefile_path": "./Makefile",
+                        "targets": "*",
+                    },
+                    description=f"Found Makefile with {len(targets)} targets",
+                    discovered_items=targets[:10],  # Show first 10
+                )
+        """
+        # Default implementation: plugin does not support discovery
+        return DiscoveryResult(
+            applicable=False,
+            confidence=0.0,
+            suggested_config={},
+            description="This plugin does not support automatic discovery",
+        )
+
+    @classmethod
+    def get_plugin_metadata(cls) -> dict[str, Any]:
+        """Return metadata about this plugin for CLI display.
+
+        Returns:
+            Dictionary with plugin metadata:
+            - name: Human-readable plugin name
+            - description: Short description
+            - version: Plugin version (optional)
+        """
+        return {
+            "name": cls.__name__,
+            "description": cls.__doc__ or "No description",
+        }
+```
+
+### CLI Command Interface
+
+Plugins can optionally expose CLI commands for direct interaction:
+
+```python
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+
+@dataclass
+class CLIArgument:
+    """Definition of a positional CLI argument."""
+
+    name: str
+    """Argument name."""
+
+    help: str
+    """Help text for the argument."""
+
+    required: bool = True
+    """Whether the argument is required."""
+
+    default: Any = None
+    """Default value if not required."""
+
+
+@dataclass
+class CLIOption:
+    """Definition of a CLI option/flag."""
+
+    name: str
+    """Option name (e.g., '--dry-run' or '-d')."""
+
+    help: str
+    """Help text for the option."""
+
+    is_flag: bool = False
+    """True if this is a boolean flag."""
+
+    default: Any = None
+    """Default value."""
+
+    type: type = str
+    """Expected type for the option value."""
+
+
+@dataclass
+class CLICommand:
+    """Definition of a CLI command exposed by a plugin."""
+
+    name: str
+    """Command name (e.g., 'list-targets').
+
+    This becomes the subcommand: cuff <plugin> <name>
+    """
+
+    help: str
+    """Help text displayed for the command."""
+
+    callback: Callable[..., Any]
+    """The function to call when the command is invoked.
+
+    Should be a classmethod or staticmethod that can run without
+    an instantiated plugin. Use typer conventions for arguments.
+    """
+
+    arguments: list[CLIArgument] = field(default_factory=list)
+    """Positional arguments for the command."""
+
+    options: list[CLIOption] = field(default_factory=list)
+    """Optional flags for the command."""
+
+
+class InSourcePlugin:
+    """Base class for in-source plugins."""
+
+    @classmethod
+    def get_cli_commands(cls) -> list[CLICommand]:
+        """Return CLI commands this plugin provides.
+
+        Override to expose plugin-specific CLI subcommands.
+        These commands are registered under:
+            cuff <plugin-name> <command-name>
+
+        Example:
+            @classmethod
+            def get_cli_commands(cls) -> list[CLICommand]:
+                return [
+                    CLICommand(
+                        name="list-targets",
+                        help="List available Makefile targets",
+                        callback=cls._cli_list_targets,
+                    ),
+                    CLICommand(
+                        name="run-target",
+                        help="Execute a Makefile target",
+                        callback=cls._cli_run_target,
+                        arguments=[
+                            CLIArgument(
+                                name="target",
+                                help="Target to run",
+                            ),
+                        ],
+                        options=[
+                            CLIOption(
+                                name="--dry-run",
+                                help="Show command without executing",
+                                is_flag=True,
+                            ),
+                        ],
+                    ),
+                ]
+
+        Returns:
+            List of CLICommand definitions, or empty list if no CLI support.
+        """
+        return []
+```
+
+### Discovery Coordinator
+
+The CLI uses a discovery coordinator to run discovery across all registered plugins:
+
+```python
+from pathlib import Path
+
+
+class DiscoveryCoordinator:
+    """Coordinates plugin discovery for a directory."""
+
+    def __init__(
+        self,
+        plugins: dict[str, type[InSourcePlugin]],
+        module_paths: dict[str, str] | None = None,
+    ) -> None:
+        """Initialize with available plugins.
+
+        Args:
+            plugins: Mapping of plugin names to plugin classes.
+            module_paths: Mapping of plugin names to their module paths.
+                          If not provided, defaults to "opencuff.plugins.builtin.{name}".
+        """
+        self.plugins = plugins
+        self.module_paths = module_paths or {}
+
+    def discover_all(self, directory: Path) -> dict[str, DiscoveryResult]:
+        """Run discovery for all plugins.
+
+        Args:
+            directory: The directory to scan.
+
+        Returns:
+            Mapping of plugin names to their discovery results.
+
+        Raises:
+            ValueError: If directory does not exist or is not a directory.
+        """
+        if not directory.exists():
+            raise ValueError(f"Directory does not exist: {directory}")
+        if not directory.is_dir():
+            raise ValueError(f"Path is not a directory: {directory}")
+
+        results = {}
+        for name, plugin_cls in self.plugins.items():
+            try:
+                results[name] = plugin_cls.discover(directory)
+            except Exception as e:
+                # Discovery should never crash the CLI
+                results[name] = DiscoveryResult(
+                    applicable=False,
+                    confidence=0.0,
+                    suggested_config={},
+                    description=f"Discovery failed: {e}",
+                )
+        return results
+
+    def generate_settings(
+        self,
+        directory: Path,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Generate settings.yml content from discovery.
+
+        Args:
+            directory: The directory that was scanned.
+            include: Only include these plugins (None = all applicable).
+            exclude: Exclude these plugins.
+
+        Returns:
+            Dictionary suitable for YAML serialization.
+        """
+        results = self.discover_all(directory)
+
+        plugins_config = {}
+        for name, result in results.items():
+            # Skip non-applicable plugins
+            if not result.applicable:
+                continue
+
+            # Apply include/exclude filters
+            if include and name not in include:
+                continue
+            if exclude and name in exclude:
+                continue
+
+            # Get module path from registry or use default
+            module_path = self.module_paths.get(
+                name, f"opencuff.plugins.builtin.{name}"
+            )
+
+            plugins_config[name] = {
+                "enabled": True,
+                "type": "in_source",
+                "module": module_path,
+                "config": result.suggested_config,
+            }
+
+        return {
+            "version": "1",
+            "plugin_settings": {
+                "health_check_interval": 30,
+                "live_reload": True,
+                "default_timeout": 60,
+            },
+            "plugins": plugins_config,
+        }
+```
+
+### Plugin Registry for Discovery
+
+Plugins must be registered to participate in discovery:
+
+```python
+# src/opencuff/plugins/discovery_registry.py
+"""Registry of plugins that support discovery.
+
+Note: Plugin registration should only occur during module import time.
+The registry is not thread-safe for concurrent modifications.
+"""
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from opencuff.plugins.base import InSourcePlugin
+
+# Lazy imports to avoid circular dependencies
+_registry: dict[str, type["InSourcePlugin"]] | None = None
+_module_paths: dict[str, str] = {}
+
+
+def get_discoverable_plugins() -> dict[str, type["InSourcePlugin"]]:
+    """Return all plugins that support discovery.
+
+    Returns:
+        Mapping of plugin names to plugin classes.
+    """
+    global _registry
+    if _registry is None:
+        from opencuff.plugins.builtin.makefile import Plugin as MakefilePlugin
+        from opencuff.plugins.builtin.packagejson import Plugin as PackageJsonPlugin
+
+        _registry = {
+            "makefile": MakefilePlugin,
+            "packagejson": PackageJsonPlugin,
+        }
+        _module_paths.update({
+            "makefile": "opencuff.plugins.builtin.makefile",
+            "packagejson": "opencuff.plugins.builtin.packagejson",
+        })
+    return _registry
+
+
+def get_module_paths() -> dict[str, str]:
+    """Return mapping of plugin names to their module paths."""
+    get_discoverable_plugins()  # Ensure initialized
+    return _module_paths.copy()
+
+
+def register_plugin(
+    name: str,
+    plugin_cls: type["InSourcePlugin"],
+    module_path: str,
+) -> None:
+    """Register a plugin for discovery.
+
+    Note: This function should only be called during module import time.
+    It is not thread-safe for concurrent modifications.
+
+    Args:
+        name: Plugin name (used in settings.yml).
+        plugin_cls: The plugin class.
+        module_path: Full module path for the plugin (e.g., "mypackage.plugins.custom").
+    """
+    global _registry
+    if _registry is None:
+        get_discoverable_plugins()  # Initialize
+    _registry[name] = plugin_cls
+    _module_paths[name] = module_path
+```
+
+### Discovery and CLI Security Considerations
+
+**Discovery Safety:**
+
+The `discover()` method is documented as safe (no code execution, no file modification), but this is a **convention, not a guarantee**. Discovery runs plugin code to scan directories, which means:
+
+- A malicious plugin could execute arbitrary code during discovery
+- Only use plugins from trusted sources
+- Discovery has the same privilege level as the CLI process
+
+**CLI Command Security:**
+
+Unlike discovery (which should only read files), CLI commands (exposed via `get_cli_commands()`) are **expected to execute code** and perform actions:
+
+| Aspect | Discovery | CLI Commands |
+|--------|-----------|--------------|
+| Purpose | Scan and suggest config | Execute operations |
+| Code execution | Should NOT execute | Expected to execute |
+| File modification | Should NOT modify | May modify |
+| User confirmation | Not required | Recommended for destructive ops |
+
+**Recommendations for plugin authors:**
+
+1. Discovery should only use `Path.exists()`, `Path.read_text()`, and similar read-only operations
+2. CLI commands that modify state should support `--dry-run`
+3. Destructive CLI commands should prompt for confirmation unless `--force` is passed
+4. Sensitive operations should be logged
 
 ### Process Plugin JSON Protocol
 

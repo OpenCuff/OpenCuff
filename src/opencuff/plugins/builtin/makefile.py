@@ -46,7 +46,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from opencuff.plugins.base import InSourcePlugin, ToolDefinition, ToolResult
+from opencuff.plugins.base import (
+    CLIArgument,
+    CLICommand,
+    CLIOption,
+    DiscoveryResult,
+    InSourcePlugin,
+    ToolDefinition,
+    ToolResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1588,6 +1596,198 @@ class Plugin(InSourcePlugin):
                 success=False,
                 error=f"Failed to execute make: {e}",
             )
+
+    # =========================================================================
+    # Discovery and CLI Methods
+    # =========================================================================
+
+    @classmethod
+    def discover(cls, directory: Path) -> DiscoveryResult:
+        """Discover if this plugin is applicable to the given directory.
+
+        Checks for Makefile, makefile, or GNUmakefile in the directory.
+        If found, extracts target names using a simple regex approach
+        (no code execution) and returns suggested configuration.
+
+        Args:
+            directory: The directory to scan for Makefiles.
+
+        Returns:
+            DiscoveryResult with applicability and suggested configuration.
+        """
+        makefile_names = ["Makefile", "makefile", "GNUmakefile"]
+
+        for name in makefile_names:
+            makefile_path = directory / name
+            if makefile_path.exists():
+                targets = cls._extract_targets_static(makefile_path)
+
+                return DiscoveryResult(
+                    applicable=True,
+                    confidence=1.0,
+                    suggested_config={
+                        "makefile_path": f"./{name}",
+                        "targets": "*",
+                        "extractor": "auto",
+                        "cache_ttl": 300,
+                        "trust_makefile": True,
+                        "working_directory": ".",
+                    },
+                    description=f"Found {name} with {len(targets)} targets",
+                    discovered_items=targets[:10],
+                )
+
+        return DiscoveryResult(
+            applicable=False,
+            confidence=0.0,
+            suggested_config={},
+            description="No Makefile found",
+        )
+
+    @staticmethod
+    def _extract_targets_static(makefile_path: Path) -> list[str]:
+        """Static target extraction for discovery (no instance needed).
+
+        Uses simple regex extraction for safe, fast discovery without
+        executing any Makefile code.
+
+        Args:
+            makefile_path: Path to the Makefile.
+
+        Returns:
+            List of target names found in the Makefile.
+        """
+        try:
+            content = makefile_path.read_text()
+        except OSError:
+            return []
+
+        # Simple regex to match target definitions (excluding assignments like :=)
+        pattern = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_.-]*)\s*:(?!=)", re.MULTILINE)
+        matches = pattern.findall(content)
+
+        # Filter out internal targets (starting with .) and deduplicate
+        targets: list[str] = []
+        seen: set[str] = set()
+        for name in matches:
+            if not name.startswith(".") and name not in seen:
+                targets.append(name)
+                seen.add(name)
+
+        return targets
+
+    @classmethod
+    def get_cli_commands(cls) -> list[CLICommand]:
+        """Return CLI commands this plugin provides.
+
+        Provides commands for:
+            - list-targets: List available Makefile targets
+            - run-target: Run a specific Makefile target
+
+        Returns:
+            List of CLICommand definitions.
+        """
+        return [
+            CLICommand(
+                name="list-targets",
+                help="List available Makefile targets",
+                callback=cls._cli_list_targets,
+                options=[
+                    CLIOption(
+                        name="--makefile",
+                        help="Path to Makefile",
+                        default="./Makefile",
+                    ),
+                ],
+            ),
+            CLICommand(
+                name="run-target",
+                help="Run a Makefile target",
+                callback=cls._cli_run_target,
+                arguments=[
+                    CLIArgument(
+                        name="target",
+                        help="Target name to run",
+                        required=True,
+                    ),
+                ],
+                options=[
+                    CLIOption(
+                        name="--dry-run",
+                        help="Show command without executing",
+                        is_flag=True,
+                    ),
+                    CLIOption(
+                        name="--timeout",
+                        help="Execution timeout in seconds",
+                        default=300,
+                        type=int,
+                    ),
+                ],
+            ),
+        ]
+
+    @classmethod
+    def _cli_list_targets(cls, makefile: str = "./Makefile") -> None:
+        """CLI handler for list-targets command.
+
+        Args:
+            makefile: Path to the Makefile.
+        """
+        path = Path(makefile)
+        if not path.exists():
+            print(f"Error: Makefile not found: {makefile}")
+            return
+
+        targets = cls._extract_targets_static(path)
+        print("Available Makefile targets:")
+        for target in targets:
+            print(f"  {target}")
+
+    @classmethod
+    def _cli_run_target(
+        cls,
+        target: str,
+        dry_run: bool = False,
+        timeout: int = 300,
+    ) -> None:
+        """CLI handler for run-target command.
+
+        Args:
+            target: The target name to run.
+            dry_run: If True, show command without executing.
+            timeout: Execution timeout in seconds.
+        """
+        import subprocess
+
+        cmd = ["make", target]
+
+        if dry_run:
+            print(f"Would execute: {' '.join(cmd)}")
+            return
+
+        print(f"Running: make {target}")
+        try:
+            result = subprocess.run(cmd, timeout=timeout, check=False)
+            print(f"Exit code: {result.returncode}")
+        except subprocess.TimeoutExpired:
+            print(f"Error: Execution timed out after {timeout}s")
+        except FileNotFoundError:
+            print("Error: make command not found")
+
+    @classmethod
+    def get_plugin_metadata(cls) -> dict[str, Any]:
+        """Return metadata about this plugin for CLI display.
+
+        Returns:
+            Dictionary containing:
+                - name: Human-readable plugin name
+                - description: Short description of the plugin
+        """
+        return {
+            "name": "Makefile",
+            "description": "Exposes Makefile targets as tools for AI coding agents",
+        }
 
 
 # Alias for compatibility

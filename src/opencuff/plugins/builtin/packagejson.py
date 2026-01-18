@@ -49,7 +49,15 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from opencuff.plugins.base import InSourcePlugin, ToolDefinition, ToolResult
+from opencuff.plugins.base import (
+    CLIArgument,
+    CLICommand,
+    CLIOption,
+    DiscoveryResult,
+    InSourcePlugin,
+    ToolDefinition,
+    ToolResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1102,6 +1110,279 @@ class Plugin(InSourcePlugin):
                 success=False,
                 error=f"Failed to execute script: {e}",
             )
+
+    # =========================================================================
+    # Discovery Interface
+    # =========================================================================
+
+    @classmethod
+    def discover(cls, directory: Path) -> DiscoveryResult:
+        """Discover if this plugin is applicable to the given directory.
+
+        Checks for the presence of package.json and extracts script information.
+        Also detects the package manager from lock files.
+
+        Args:
+            directory: The directory to scan for package.json.
+
+        Returns:
+            DiscoveryResult indicating applicability and suggested config.
+        """
+        package_json_path = directory / "package.json"
+
+        if not package_json_path.exists():
+            return DiscoveryResult(
+                applicable=False,
+                confidence=0.0,
+                suggested_config={},
+                description="No package.json found",
+            )
+
+        # Try to parse package.json
+        try:
+            content = package_json_path.read_text()
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            return DiscoveryResult(
+                applicable=False,
+                confidence=0.0,
+                suggested_config={},
+                description="package.json contains invalid JSON",
+            )
+
+        # Extract scripts
+        scripts = data.get("scripts", {}) if isinstance(data, dict) else {}
+        script_names = list(scripts.keys())
+
+        # Detect package manager
+        package_manager = cls._detect_package_manager_static(directory)
+
+        # Build description
+        script_count = len(script_names)
+        description = (
+            f"Found package.json with {script_count} scripts ({package_manager})"
+        )
+
+        # Build suggested configuration
+        suggested_config = {
+            "package_json_path": "./package.json",
+            "package_manager": "auto",
+            "scripts": "*",
+            "exclude_scripts": "",
+            "exclude_lifecycle_scripts": True,
+            "cache_ttl": 300,
+            "working_directory": ".",
+            "default_timeout": 300,
+            "expose_list_scripts": True,
+        }
+
+        # Build warnings list
+        warnings: list[str] = []
+
+        return DiscoveryResult(
+            applicable=True,
+            confidence=1.0,
+            suggested_config=suggested_config,
+            description=description,
+            warnings=warnings,
+            discovered_items=script_names,
+        )
+
+    @staticmethod
+    def _detect_package_manager_static(directory: Path) -> str:
+        """Detect package manager from lock files (static method for discovery).
+
+        Lock file precedence (first match wins):
+            1. pnpm-lock.yaml -> pnpm
+            2. yarn.lock -> yarn
+            3. bun.lockb -> bun
+            4. package-lock.json -> npm
+            5. (default) -> npm
+
+        Args:
+            directory: The directory to check for lock files.
+
+        Returns:
+            The detected package manager name.
+        """
+        if (directory / "pnpm-lock.yaml").exists():
+            return "pnpm"
+        if (directory / "yarn.lock").exists():
+            return "yarn"
+        if (directory / "bun.lockb").exists():
+            return "bun"
+        if (directory / "package-lock.json").exists():
+            return "npm"
+        return "npm"  # Default
+
+    # =========================================================================
+    # CLI Interface
+    # =========================================================================
+
+    @classmethod
+    def get_cli_commands(cls) -> list[CLICommand]:
+        """Return CLI commands this plugin provides.
+
+        Commands:
+            - list-scripts: List available npm/pnpm scripts
+            - run-script: Run a specific script
+
+        Returns:
+            List of CLICommand definitions.
+        """
+        return [
+            CLICommand(
+                name="list-scripts",
+                help="List available npm/pnpm scripts",
+                callback=cls._cli_list_scripts,
+                options=[
+                    CLIOption(
+                        name="--package-json",
+                        help="Path to package.json",
+                        default="./package.json",
+                    ),
+                ],
+            ),
+            CLICommand(
+                name="run-script",
+                help="Run a specific npm/pnpm script",
+                callback=cls._cli_run_script,
+                arguments=[
+                    CLIArgument(
+                        name="script",
+                        help="Script name to run",
+                        required=True,
+                    ),
+                ],
+                options=[
+                    CLIOption(
+                        name="--dry-run",
+                        help="Show command without executing",
+                        is_flag=True,
+                        default=False,
+                    ),
+                    CLIOption(
+                        name="--timeout",
+                        help="Execution timeout in seconds",
+                        default=300,
+                        type=int,
+                    ),
+                    CLIOption(
+                        name="--package-json",
+                        help="Path to package.json",
+                        default="./package.json",
+                    ),
+                ],
+            ),
+        ]
+
+    @classmethod
+    def _cli_list_scripts(cls, package_json: str = "./package.json") -> None:
+        """CLI handler for list-scripts command.
+
+        Args:
+            package_json: Path to the package.json file.
+        """
+        path = Path(package_json)
+        if not path.exists():
+            print(f"Error: package.json not found: {package_json}")
+            return
+
+        try:
+            content = path.read_text()
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in {package_json}: {e}")
+            return
+
+        scripts = data.get("scripts", {})
+        if not scripts:
+            print("No scripts found in package.json")
+            return
+
+        # Detect package manager
+        directory = path.parent
+        pm = cls._detect_package_manager_static(directory)
+
+        print(f"Package Manager: {pm}")
+        print("Available scripts:")
+        for name, command in scripts.items():
+            print(f"  {name:<20} {command}")
+
+    @classmethod
+    def _cli_run_script(
+        cls,
+        script: str,
+        dry_run: bool = False,
+        timeout: int = 300,
+        package_json: str = "./package.json",
+    ) -> None:
+        """CLI handler for run-script command.
+
+        Args:
+            script: Name of the script to run.
+            dry_run: If True, show command without executing.
+            timeout: Execution timeout in seconds.
+            package_json: Path to the package.json file.
+        """
+        import subprocess
+
+        path = Path(package_json)
+        if not path.exists():
+            print(f"Error: package.json not found: {package_json}")
+            return
+
+        try:
+            content = path.read_text()
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in {package_json}: {e}")
+            return
+
+        scripts = data.get("scripts", {})
+        if script not in scripts:
+            print(f"Error: Script '{script}' not found in package.json")
+            print(f"Available scripts: {', '.join(scripts.keys())}")
+            return
+
+        # Detect package manager
+        directory = path.parent
+        pm = cls._detect_package_manager_static(directory)
+
+        cmd = [pm, "run", script]
+
+        if dry_run:
+            print(f"Would execute: {' '.join(cmd)}")
+            return
+
+        print(f"Running: {pm} run {script}")
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(directory),
+                timeout=timeout,
+            )
+            print(f"Exit code: {result.returncode}")
+        except subprocess.TimeoutExpired:
+            print(f"Error: Script timed out after {timeout} seconds")
+        except FileNotFoundError:
+            print(f"Error: Package manager '{pm}' not found")
+
+    # =========================================================================
+    # Plugin Metadata
+    # =========================================================================
+
+    @classmethod
+    def get_plugin_metadata(cls) -> dict[str, Any]:
+        """Return metadata about this plugin for CLI display.
+
+        Returns:
+            Dictionary with plugin metadata including name and description.
+        """
+        return {
+            "name": "Package.json",
+            "description": "Exposes npm/pnpm scripts from package.json as MCP tools",
+        }
 
 
 # Alias for compatibility
