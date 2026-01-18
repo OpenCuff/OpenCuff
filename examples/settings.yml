@@ -1,0 +1,57 @@
+# OpenCuff Settings
+# This file configures which plugins are loaded and their settings.
+
+version: "1"
+
+# Global plugin settings
+plugin_settings:
+  # Health check interval in seconds (0 to disable)
+  health_check_interval: 30
+
+  # Enable live reload of plugins when this file changes
+  live_reload: true
+
+  # Default timeout for plugin operations in seconds
+  default_timeout: 30
+
+# Plugin configurations
+plugins:
+  # Makefile plugin - exposes Makefile targets as tools
+  makefile:
+    enabled: true
+    type: in_source
+    module: opencuff.plugins.builtin.makefile
+    config:
+      # Path to the Makefile (relative to working_directory or absolute)
+      makefile_path: ./Makefile
+
+      # Which targets to expose (comma-separated fnmatch patterns)
+      # Examples: "build,test,clean" or "build-*,test-*,deploy-*"
+      targets: "build,test,clean,lint,format"
+
+      # Targets to exclude (comma-separated fnmatch patterns)
+      exclude_targets: ""
+
+      # Extraction strategy: simple, make_database, or auto
+      # - simple: Fast regex parsing (safe for untrusted Makefiles)
+      # - make_database: Uses 'make -pn' for full accuracy (handles includes, variables)
+      # - auto: Automatically selects based on Makefile complexity
+      extractor: auto
+
+      # Cache TTL in seconds (0 to disable caching)
+      cache_ttl: 300
+
+      # Trust the Makefile (set to false for untrusted Makefiles)
+      # When false, always uses 'simple' extractor to prevent code execution
+      trust_makefile: true
+
+      # Working directory for make commands
+      working_directory: .
+
+  # Dummy plugin for testing
+  dummy:
+    enabled: false
+    type: in_source
+    module: opencuff.plugins.builtin.dummy
+    config:
+      prefix: "[Test] "

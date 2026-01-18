@@ -17,6 +17,42 @@ OpenCuff provides a governed way for AI coding agents (Claude, OpenCode, and oth
 
 OpenCuff sits between your AI coding agent and your system as an MCP (Model Context Protocol) server. Instead of giving agents unrestricted shell access, you define a policy that specifies exactly which commands are allowed.
 
+## Quick Start
+
+### 1. Configure OpenCuff
+
+Create a `settings.yml` file (see `examples/settings.yml`):
+
+```yaml
+version: "1"
+plugins:
+  makefile:
+    enabled: true
+    type: in_source
+    module: opencuff.plugins.builtin.makefile
+    config:
+      makefile_path: ./Makefile
+      targets: "build,test,clean"
+```
+
+### 2. Add to Claude Code
+
+Add to your `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "opencuff": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/OpenCuff", "fastmcp", "run", "src/opencuff/server.py:mcp"],
+      "env": {"OPENCUFF_SETTINGS": "/path/to/settings.yml"}
+    }
+  }
+}
+```
+
+See `examples/` for more configuration options.
+
 ## Development
 
 ### Prerequisites
@@ -55,9 +91,20 @@ uv run ruff format .  # Format
 ```
 src/opencuff/
 ├── __init__.py
-└── server.py      # FastMCP server definition
-tests/
-└── test_sanity.py # Basic connectivity test
+├── server.py              # FastMCP server definition
+└── plugins/
+    ├── base.py            # Plugin interfaces (InSourcePlugin, ToolDefinition)
+    ├── config.py          # Configuration models (settings.yml)
+    ├── manager.py         # PluginManager, lifecycle management
+    ├── registry.py        # Tool registry with namespacing
+    ├── barrier.py         # Request barrier for live reload
+    ├── watcher.py         # Config file watcher
+    └── builtin/
+        ├── dummy.py       # Test plugin
+        └── makefile.py    # Makefile target plugin
+examples/
+├── settings.yml           # Example OpenCuff configuration
+└── claude-code-mcp-config.json  # Example Claude Code config
 ```
 
 ## License

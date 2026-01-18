@@ -1,0 +1,21 @@
+# OpenCuff Settings for this project
+version: "1"
+
+plugin_settings:
+  health_check_interval: 30
+  live_reload: true
+  default_timeout: 60
+
+plugins:
+  makefile:
+    enabled: true
+    type: in_source
+    module: opencuff.plugins.builtin.makefile
+    config:
+      makefile_path: ./Makefile
+      targets: "*"
+      extractor: simple
+      cache_ttl: 300
+      trust_makefile: true
+      working_directory: .
+      expose_list_targets: true

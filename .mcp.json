@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "opencuff": {
+      "command": "uv",
+      "args": [
+        "run",
+        "fastmcp",
+        "run",
+        "src/opencuff/server.py:mcp"
+      ],
+      "env": {
+        "OPENCUFF_SETTINGS": "./settings.yml"
+      }
+    }
+  }
+}
