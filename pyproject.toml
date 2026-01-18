@@ -1,0 +1,22 @@
+[project]
+name = "opencuff"
+version = "0.1.0"
+description = "Controlled and secure operations for coding agents"
+readme = "README.md"
+authors = [
+    { name = "Kfir Gollan" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.14.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+]
