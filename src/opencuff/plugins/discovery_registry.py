@@ -52,6 +52,18 @@ def get_discoverable_plugins() -> dict[str, type["InSourcePlugin"]]:
             # packagejson plugin not available, skip
             pass
 
+        # Try to import scripts plugin if available
+        try:
+            from opencuff.plugins.builtin.scripts import (
+                Plugin as ScriptsPlugin,
+            )
+
+            _registry["scripts"] = ScriptsPlugin
+            _module_paths["scripts"] = "opencuff.plugins.builtin.scripts"
+        except ImportError:
+            # scripts plugin not available, skip
+            pass
+
     return _registry
 
 

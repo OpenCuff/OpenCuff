@@ -32,3 +32,17 @@ plugins:
       exclude_lifecycle_scripts: true
       cache_ttl: 300
       working_directory: .
+
+  scripts:
+    enabled: true
+    type: in_source
+    module: opencuff.plugins.builtin.scripts
+    config:
+      patterns:
+        - "scripts/*.sh"
+      base_directory: "."
+      exclude: []
+      default_timeout: 300
+      working_directory: "."
+      expose_list_scripts: true
+      cache_ttl: 300
