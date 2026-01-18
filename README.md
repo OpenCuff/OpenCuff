@@ -30,6 +30,9 @@ OpenCuff sits between your AI coding agent and your system as an MCP (Model Cont
 # Install dependencies
 uv sync
 
+# Set up git hooks
+uv run pre-commit install
+
 # Run the MCP server with the inspector for development
 uv run fastmcp dev src/opencuff/server.py:mcp
 ```
@@ -38,6 +41,13 @@ uv run fastmcp dev src/opencuff/server.py:mcp
 
 ```bash
 uv run pytest
+```
+
+### Linting
+
+```bash
+uv run ruff check .   # Lint
+uv run ruff format .  # Format
 ```
 
 ### Project Structure

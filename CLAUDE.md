@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync                                        # Install dependencies
+uv run pre-commit install                      # Set up git hooks (once after clone)
 uv run pytest                                  # Run all tests
 uv run pytest tests/test_sanity.py -v          # Run a single test file
 uv run fastmcp dev src/opencuff/server.py:mcp  # Run MCP server with inspector

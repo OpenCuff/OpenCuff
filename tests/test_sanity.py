@@ -1,5 +1,6 @@
 import pytest
 from fastmcp import Client
+
 from opencuff import mcp
 
 
