@@ -1,0 +1,13 @@
+{
+  "name": "simple-project",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint ."
+  },
+  "scripts-info": {
+    "build": "Compile TypeScript to JavaScript",
+    "test": "Run the test suite"
+  }
+}

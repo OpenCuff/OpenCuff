@@ -1,0 +1,10 @@
+{
+  "name": "opencuff-test",
+  "version": "1.0.0",
+  "scripts": {
+    "hello": "echo 'Hello from OpenCuff!'"
+  },
+  "scripts-info": {
+    "hello": "A simple greeting script"
+  }
+}

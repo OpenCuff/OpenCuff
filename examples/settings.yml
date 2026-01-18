@@ -48,6 +48,33 @@ plugins:
       # Working directory for make commands
       working_directory: .
 
+  # Package.json plugin - exposes npm/pnpm scripts as tools
+  packagejson:
+    enabled: true
+    type: in_source
+    module: opencuff.plugins.builtin.packagejson
+    config:
+      # Path to package.json
+      package_json_path: ./package.json
+
+      # Package manager: npm, pnpm, or auto (auto-detect from lock files)
+      package_manager: auto
+
+      # Which scripts to expose (comma-separated fnmatch patterns, * for all)
+      scripts: "*"
+
+      # Scripts to exclude
+      exclude_scripts: ""
+
+      # Exclude npm lifecycle scripts (preinstall, postinstall, etc.)
+      exclude_lifecycle_scripts: true
+
+      # Cache TTL in seconds
+      cache_ttl: 300
+
+      # Working directory for script execution
+      working_directory: .
+
   # Dummy plugin for testing
   dummy:
     enabled: false

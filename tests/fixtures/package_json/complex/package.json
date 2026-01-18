@@ -1,0 +1,24 @@
+{
+  "name": "complex-project",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:prod": "NODE_ENV=production vite build",
+    "build:staging": "NODE_ENV=staging vite build",
+    "test": "vitest",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint .",
+    "lint-fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "ci.test": "vitest run --reporter=junit"
+  },
+  "scripts-info": {
+    "dev": "Start development server with hot reload",
+    "build:prod": "Build for production with optimizations",
+    "test:unit": "Run unit tests only"
+  }
+}

@@ -19,3 +19,16 @@ plugins:
       trust_makefile: true
       working_directory: .
       expose_list_targets: true
+
+  packagejson:
+    enabled: true
+    type: in_source
+    module: opencuff.plugins.builtin.packagejson
+    config:
+      package_json_path: ./package.json
+      package_manager: auto
+      scripts: "*"
+      exclude_scripts: ""
+      exclude_lifecycle_scripts: true
+      cache_ttl: 300
+      working_directory: .
