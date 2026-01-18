@@ -1179,13 +1179,17 @@ class Plugin(InSourcePlugin):
         # Build warnings list
         warnings: list[str] = []
 
+        # Build tool names as they would appear in the MCP server
+        tool_names = [f"{package_manager}_list_scripts"]
+        tool_names.extend(f"{package_manager}_{name}" for name in script_names)
+
         return DiscoveryResult(
             applicable=True,
             confidence=1.0,
             suggested_config=suggested_config,
             description=description,
             warnings=warnings,
-            discovered_items=script_names,
+            discovered_items=tool_names,
         )
 
     @staticmethod

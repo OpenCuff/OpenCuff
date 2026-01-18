@@ -1622,6 +1622,10 @@ class Plugin(InSourcePlugin):
             if makefile_path.exists():
                 targets = cls._extract_targets_static(makefile_path)
 
+                # Build tool names as they would appear in the MCP server
+                tool_names = ["make_list_targets"]
+                tool_names.extend(f"make_{target}" for target in targets)
+
                 return DiscoveryResult(
                     applicable=True,
                     confidence=1.0,
@@ -1634,7 +1638,7 @@ class Plugin(InSourcePlugin):
                         "working_directory": ".",
                     },
                     description=f"Found {name} with {len(targets)} targets",
-                    discovered_items=targets[:10],
+                    discovered_items=tool_names,
                 )
 
         return DiscoveryResult(

@@ -50,14 +50,17 @@ class TestPackageJsonDiscovery:
         assert "working_directory" in result.suggested_config
 
     def test_discover_populates_discovered_items(self) -> None:
-        """Verify discover() populates discovered_items with script names."""
+        """Verify discover() populates discovered_items with MCP tool names."""
         result = Plugin.discover(FIXTURES_DIR / "simple")
 
         assert result.applicable is True
         assert len(result.discovered_items) > 0
-        assert "build" in result.discovered_items
-        assert "test" in result.discovered_items
-        assert "lint" in result.discovered_items
+        # Should include list_scripts tool
+        assert "npm_list_scripts" in result.discovered_items
+        # Scripts should be prefixed with package manager
+        assert "npm_build" in result.discovered_items
+        assert "npm_test" in result.discovered_items
+        assert "npm_lint" in result.discovered_items
 
     def test_discover_not_applicable_when_no_package_json(self, tmp_path: Path) -> None:
         """Verify discover() returns not applicable when no package.json exists."""
@@ -77,7 +80,8 @@ class TestPackageJsonDiscovery:
         assert result.applicable is True
         assert result.confidence == 1.0
         assert "0 scripts" in result.description
-        assert result.discovered_items == []
+        # Should still have the list_scripts tool
+        assert result.discovered_items == ["npm_list_scripts"]
 
     def test_discover_with_complex_scripts(self) -> None:
         """Verify discover() finds all scripts in complex package.json."""
@@ -85,9 +89,11 @@ class TestPackageJsonDiscovery:
 
         assert result.applicable is True
         assert "13 scripts" in result.description
-        # Should include scripts with colons and hyphens
-        assert "build:prod" in result.discovered_items
-        assert "lint-fix" in result.discovered_items
+        # Should include list_scripts tool
+        assert "npm_list_scripts" in result.discovered_items
+        # Should include scripts with colons and hyphens (prefixed)
+        assert "npm_build:prod" in result.discovered_items
+        assert "npm_lint-fix" in result.discovered_items
 
 
 # =============================================================================

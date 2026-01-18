@@ -44,10 +44,10 @@ class TestDiscover:
         assert "Makefile" in result.description or "makefile" in result.description
         assert len(result.discovered_items) > 0
 
-    def test_discover_returns_target_names_in_discovered_items(
+    def test_discover_returns_tool_names_in_discovered_items(
         self, tmp_path: Path
     ) -> None:
-        """Verify discover returns target names in discovered_items."""
+        """Verify discover returns MCP tool names in discovered_items."""
         makefile = tmp_path / "Makefile"
         makefile.write_text(
             ".PHONY: build test clean\n\n"
@@ -60,17 +60,19 @@ class TestDiscover:
 
         assert isinstance(result.discovered_items, list)
         assert len(result.discovered_items) > 0
-        # Check that we get actual target names
+        # Check that we get tool names with make_ prefix
         for item in result.discovered_items:
             assert isinstance(item, str)
             assert len(item) > 0
-        # Verify specific targets are found
-        assert "build" in result.discovered_items
-        assert "test" in result.discovered_items
+        # Verify list_targets tool is included
+        assert "make_list_targets" in result.discovered_items
+        # Verify specific targets are found with make_ prefix
+        assert "make_build" in result.discovered_items
+        assert "make_test" in result.discovered_items
 
-    def test_discover_limits_discovered_items_to_first_10(self, tmp_path: Path) -> None:
-        """Verify discover limits discovered_items to first 10 targets."""
-        # Create a Makefile with more than 10 targets
+    def test_discover_includes_all_targets_as_tools(self, tmp_path: Path) -> None:
+        """Verify discover includes all targets as tool names."""
+        # Create a Makefile with many targets
         targets = [f"target{i}" for i in range(15)]
         phony_line = f".PHONY: {' '.join(targets)}"
         target_lines = [f"{t}:\n\t@echo {t}" for t in targets]
@@ -82,7 +84,11 @@ class TestDiscover:
         result = Plugin.discover(tmp_path)
 
         assert result.applicable is True
-        assert len(result.discovered_items) <= 10
+        # Should include list_targets + all 15 targets = 16 tools
+        assert len(result.discovered_items) == 16
+        assert "make_list_targets" in result.discovered_items
+        assert "make_target0" in result.discovered_items
+        assert "make_target14" in result.discovered_items
 
     def test_discover_not_applicable_when_no_makefile(self, tmp_path: Path) -> None:
         """Verify discover returns not applicable when no Makefile exists."""
@@ -188,7 +194,8 @@ class TestDiscover:
         # Empty Makefile is still a Makefile
         assert result.applicable is True
         assert result.confidence == 1.0
-        assert result.discovered_items == []
+        # Should still have the list_targets tool
+        assert result.discovered_items == ["make_list_targets"]
         assert "0" in result.description  # 0 targets
 
 

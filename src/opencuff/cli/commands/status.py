@@ -105,9 +105,10 @@ def _build_status_data(
         if plugin_config.type == PluginType.IN_SOURCE and plugin_config.module:
             plugin_info["module"] = plugin_config.module
 
-        # Estimate tool count based on plugin type
-        tool_count = _estimate_tool_count(name, plugin_config, config_path.parent)
-        plugin_info["tool_count"] = tool_count
+        # Get tools using plugin discovery mechanism
+        tools = _get_plugin_tools_via_discovery(name, plugin_config, config_path.parent)
+        plugin_info["tools"] = tools
+        plugin_info["tool_count"] = len(tools)
 
         if verbose:
             plugin_info["config"] = plugin_config.config
@@ -122,10 +123,13 @@ def _build_status_data(
     }
 
 
-def _estimate_tool_count(name: str, plugin_config: PluginConfig, base_dir: Path) -> int:
-    """Estimate the number of tools a plugin would expose.
+def _get_plugin_tools_via_discovery(
+    name: str, plugin_config: PluginConfig, base_dir: Path
+) -> list[str]:
+    """Get the list of tools a plugin would expose using discovery mechanism.
 
-    This is a rough estimate based on the plugin type and configuration.
+    Uses the plugin's discover() method to get the discovered items,
+    which represent the tools the plugin would expose.
 
     Args:
         name: Plugin name.
@@ -133,44 +137,31 @@ def _estimate_tool_count(name: str, plugin_config: PluginConfig, base_dir: Path)
         base_dir: Base directory for resolving relative paths.
 
     Returns:
-        Estimated number of tools.
+        List of tool names the plugin would expose.
     """
     if not plugin_config.enabled:
-        return 0
+        return []
 
-    # For makefile plugin, try to count targets
-    if name == "makefile":
-        makefile_path = plugin_config.config.get("makefile_path", "./Makefile")
-        full_path = base_dir / makefile_path
-        if full_path.exists():
-            try:
-                # Lazy import to avoid loading plugin code unnecessarily
-                from opencuff.plugins.builtin.makefile import Plugin as MakefilePlugin
+    try:
+        # Lazy import to avoid circular dependencies
+        from opencuff.plugins.discovery_registry import get_discoverable_plugins
 
-                targets = MakefilePlugin._extract_targets_static(full_path)
-                return len(targets) + 1  # +1 for list_targets tool
-            except Exception:
-                pass
-        return 0
+        plugins = get_discoverable_plugins()
+        plugin_cls = plugins.get(name)
 
-    # For packagejson plugin, try to count scripts
-    if name == "packagejson":
-        package_json_path = plugin_config.config.get(
-            "package_json_path", "./package.json"
-        )
-        full_path = base_dir / package_json_path
-        if full_path.exists():
-            try:
-                content = full_path.read_text()
-                data = json.loads(content)
-                scripts = data.get("scripts", {})
-                return len(scripts) + 1  # +1 for list_scripts tool
-            except Exception:
-                pass
-        return 0
+        if plugin_cls is None:
+            return []
 
-    # Default: unknown
-    return -1
+        # Use the plugin's discover method
+        result = plugin_cls.discover(base_dir)
+
+        if not result.applicable:
+            return []
+
+        return result.discovered_items
+
+    except Exception:
+        return []
 
 
 def _display_status(status_data: dict, verbose: bool) -> None:
@@ -201,11 +192,13 @@ def _display_status(status_data: dict, verbose: bool) -> None:
             if "module" in plugin:
                 typer.echo(f"  Module: {plugin['module']}")
 
-            tool_count = plugin.get("tool_count", -1)
-            if tool_count >= 0:
-                typer.echo(f"  Tools: {tool_count}")
+            tools = plugin.get("tools", [])
+            if tools:
+                typer.echo(f"  Tools: {len(tools)}")
+                for tool in tools:
+                    typer.echo(f"    - {tool}")
             else:
-                typer.echo("  Tools: unknown")
+                typer.echo("  Tools: none")
 
         if verbose and "config" in plugin:
             typer.echo("  Config:")
