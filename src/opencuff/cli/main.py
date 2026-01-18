@@ -1,13 +1,15 @@
 """OpenCuff CLI entry point.
 
 This module provides the main Typer application and entry point for the `cuff` CLI.
-It registers core commands (init, status, doctor) and dynamically registers plugin
-commands with appropriate error handling.
+It registers core commands (init, status, doctor, run, version) and dynamically
+registers plugin commands with appropriate error handling.
 
 Usage:
     cuff init [options]       - Initialize settings.yml
     cuff status [options]     - Show plugin status
     cuff doctor [options]     - Run diagnostics
+    cuff run [options]        - Run the MCP server
+    cuff version [options]    - Show version information
     cuff <plugin> <action>    - Plugin-specific commands
 """
 
@@ -15,7 +17,7 @@ import logging
 
 import typer
 
-from opencuff.cli.commands import doctor, init, status
+from opencuff.cli.commands import doctor, init, run, status, version
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,8 @@ app = typer.Typer(
 app.command(name="init")(init.init_command)
 app.command(name="status")(status.status_command)
 app.command(name="doctor")(doctor.doctor_command)
+app.command(name="run")(run.run_command)
+app.command(name="version")(version.version_command)
 
 
 def register_plugin_commands(app: typer.Typer) -> None:
